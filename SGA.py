@@ -84,11 +84,13 @@ if __name__ == "__main__":
         offspring = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
 
         # d) Implement survivor selection
+        # TODO Add another survivor selection function
         survivors = survivor_selection_top(parents, offspring, population_size)
 
         population = survivors
 
     print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')
+    print('Unique normalized x values:', np.unique(np.round(normalized)))
 
     plt.plot(fitness_array)
     plt.show()
