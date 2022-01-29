@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import matplotlib.pyplot as plt
+from LinReg import LinReg
 
 def generate_population(population_size: int, n_features: int):
     return np.random.randint(2, size=(population_size, n_features))
@@ -19,7 +20,6 @@ def sine_penality_fitness_function(population: np.array, min_val: int, max_val: 
     decimal_population[decimal_population > max_val] = max_val
     sin_values = np.sin(decimal_population) # [-1, 1]
     return decimal_population, sin_values
-
 
 
 # Roulette wheel selection
@@ -61,18 +61,28 @@ def create_offspring(parents: np.array, n_offspring:int, p_c: int, p_m: int):
     
     return offspring
 
-def survivor_selection_top(parents: np.array, offspring: np.array, survivor_size: int):
-    normalized_parents, parents_fitness = sine_fitness_function(parents, genetic_size)
-    normalized_offspring, offspring_fitness = sine_fitness_function(offspring, genetic_size)
+def survivor_selection_top(parents: np.array, offspring: np.array, survivor_size: int, function):
+    normalized_parents, parents_fitness = function(parents, genetic_size)
+    normalized_offspring, offspring_fitness = function(offspring, genetic_size)
     new_population = np.concatenate((parents, offspring), axis=0)
     new_offspring = np.concatenate((parents_fitness, offspring_fitness), axis=0)
 
     top_fitness_indices = np.argpartition(new_offspring, -survivor_size)[-survivor_size:]
     return new_population[top_fitness_indices]
 
+def ml_fitness(population: np.array, geneteic_size: int):
+    fitness = np.zeros(population.shape[0])
+    lin_reg = LinReg()
+    x = data[:, :-1]
+    y = data[:, -1]
+    for i, bitstring in enumerate(population):
+        filtered_x = lin_reg.get_columns(x, bitstring)
+        fitness[i] = lin_reg.get_fitness(filtered_x, y)
+    return x, fitness
 
 
 if __name__ == "__main__":
+    '''
     population_size = 50
     genetic_size = 30
     n_parents = population_size    
@@ -98,7 +108,7 @@ if __name__ == "__main__":
 
         # d) Implement survivor selection
         # TODO Add another survivor selection function
-        survivors = survivor_selection_top(parents, offspring, population_size) # Deterministic
+        survivors = survivor_selection_top(parents, offspring, population_size, sine_fitness_function) # Deterministic
 
         population = survivors
 
@@ -125,7 +135,7 @@ if __name__ == "__main__":
     mutation_rate = 0.005           # p_m
     n_generations = 10
 
-    # f) Add the constraint that the solution must reside in the interval [5,10]
+    # f) Add the constraint that the solution must reside in the interval [5, 10]
     population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
 
@@ -135,11 +145,10 @@ if __name__ == "__main__":
         parents = roulette_selection(fitness, population, n_parents) # Stochastic
         # parents = parent_selection_top(fitness, population, n_parents) # Deterministic
         fitness_array[gen] = np.average(fitness)
-        print(np.unique(fitness))
 
         offspring = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
 
-        survivors = survivor_selection_top(parents, offspring, population_size) # Deterministic
+        survivors = survivor_selection_top(parents, offspring, population_size, sine_fitness_function) # Deterministic
 
         population = survivors
 
@@ -157,5 +166,45 @@ if __name__ == "__main__":
     plt.ylim(-1, 1)
     plt.show()
     plt.close()
+    '''
 
+    # g) Run the genetic algorithm on the provided dataset.
 
+    # Read data from Dataset.txt
+    file = open('Dataset.txt', 'r').read().split()
+    data = np.zeros((len(file), len(file[0].split(','))))
+    for i, line in enumerate(file):
+        data[i] = line.split(',')
+
+    population_size = 10
+    genetic_size = data.shape[1]-1 # NB the label is not a feature
+    n_parents = population_size    
+    n_offspring = population_size  
+    crossover_rate = 1.0            # p_c 1.0 => two offsprings per parents
+    mutation_rate = 0.85            # p_m
+    n_generations = 10
+
+    population = generate_population(population_size, genetic_size)
+    fitness_array = np.zeros(n_generations)
+
+    fitness_array = np.zeros(n_generations)
+
+    for gen in range(n_generations):
+
+        x, fitness = ml_fitness(population, genetic_size)
+        # parents = roulette_selection(fitness, population, n_parents) # Stochastic
+        parents = parent_selection_top(fitness, population, n_parents) # Deterministic
+        fitness_array[gen] = np.average(fitness)
+
+        # c) Crossover and mutation
+        offspring = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
+
+        # d) Implement survivor selection
+        survivors = survivor_selection_top(parents, offspring, population_size, ml_fitness) # Deterministic
+
+        population = survivors
+
+    print(f'Final fitness average {np.average(fitness)}')
+
+    plt.plot(fitness_array)
+    plt.show()
