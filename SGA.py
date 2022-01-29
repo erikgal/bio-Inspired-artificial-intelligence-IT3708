@@ -13,6 +13,14 @@ def sine_fitness_function(population: np.array, n_features: int):
     sin_values = np.sin(normalized_population) # [-1, 1]
     return normalized_population, sin_values
 
+def sine_penality_fitness_function(population: np.array, min_val: int, max_val: int):
+    decimal_population = population.dot(1 << np.arange(population.shape[-1]))
+    decimal_population[decimal_population < min_val] = min_val
+    decimal_population[decimal_population > max_val] = max_val
+    sin_values = np.sin(decimal_population) # [-1, 1]
+    return decimal_population, sin_values
+
+
 
 # Roulette wheel selection
 def roulette_selection(fitness: np.array, population: np.array, n: int):
@@ -22,6 +30,10 @@ def roulette_selection(fitness: np.array, population: np.array, n: int):
     survivor_indices = np.random.choice(indices, n, p = probability)
     return population[survivor_indices]
 
+def parent_selection_top(fitness: np.array, population: np.array, n: int):
+    top_fitness_indices = np.argpartition(fitness, -n)[-n:]
+    return population[top_fitness_indices]
+
 def single_point_crossover(A, B, p):
     A_cross = np.append(A[:p], B[p:])
     B_cross = np.append(B[:p], A[p:])
@@ -29,7 +41,7 @@ def single_point_crossover(A, B, p):
 
 def create_offspring(parents: np.array, n_offspring:int, p_c: int, p_m: int):
     assert parents.shape[0] % 2 == 0 # Has to be an even number
-    assert parents.shape[0] >= n_offspring
+    assert parents.shape[0] >= n_offspring # TODO this should no be a requirement
 
     shuffled_indices = np.array([i for i in range(parents.shape[0])])
     np.random.shuffle(shuffled_indices)
@@ -77,7 +89,8 @@ if __name__ == "__main__":
 
         # b) Implement a parent selection function
         normalized, fitness = sine_fitness_function(population, genetic_size) # Normalized to range [0, 128]
-        parents = roulette_selection(fitness, population, n_parents)
+        # parents = roulette_selection(fitness, population, n_parents) # Stochastic
+        parents = parent_selection_top(fitness, population, n_parents) # Deterministic
         fitness_array[gen] = np.average(fitness)
 
         # c) Crossover and mutation
@@ -85,7 +98,7 @@ if __name__ == "__main__":
 
         # d) Implement survivor selection
         # TODO Add another survivor selection function
-        survivors = survivor_selection_top(parents, offspring, population_size)
+        survivors = survivor_selection_top(parents, offspring, population_size) # Deterministic
 
         population = survivors
 
@@ -100,6 +113,47 @@ if __name__ == "__main__":
     plt.plot(x, y, color='blue')
     plt.plot(normalized, fitness, linestyle="", marker="o", color='red')
     plt.xlim(0, 128)
+    plt.ylim(-1, 1)
+    plt.show()
+    plt.close()
+
+    population_size = 200
+    genetic_size = 4
+    n_parents = population_size    
+    n_offspring = population_size  
+    crossover_rate = 1.0            # p_c 1.0 => two offsprings per parents
+    mutation_rate = 0.005           # p_m
+    n_generations = 10
+
+    # f) Add the constraint that the solution must reside in the interval [5,10]
+    population = generate_population(population_size, genetic_size)
+    fitness_array = np.zeros(n_generations)
+
+    for gen in range(n_generations):
+
+        normalized, fitness = sine_penality_fitness_function(population, 5, 10) # Penalize to [5, 10]
+        parents = roulette_selection(fitness, population, n_parents) # Stochastic
+        # parents = parent_selection_top(fitness, population, n_parents) # Deterministic
+        fitness_array[gen] = np.average(fitness)
+        print(np.unique(fitness))
+
+        offspring = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
+
+        survivors = survivor_selection_top(parents, offspring, population_size) # Deterministic
+
+        population = survivors
+
+    print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')
+    print('Unique normalized x values:', np.unique(np.round(normalized)))
+
+    plt.plot(fitness_array)
+    plt.show()
+
+    x = np.arange(5, 10, 0.1) 
+    y = np.sin(x)
+    plt.plot(x, y, color='blue')
+    plt.plot(normalized, fitness, linestyle="", marker="o", color='red')
+    plt.xlim(5, 10)
     plt.ylim(-1, 1)
     plt.show()
     plt.close()
