@@ -45,7 +45,7 @@ def create_offspring(parents: np.array, n_offspring:int, p_c: int, p_m: int):
 
     shuffled_indices = np.array([i for i in range(parents.shape[0])])
     np.random.shuffle(shuffled_indices)
-    offspring = np.zeros((n_offspring, parents.shape[1]))
+    offspring = np.zeros((n_offspring, parents.shape[1]), dtype=int)
 
     # Crossover
     for i in range(0, n_offspring, 2):
@@ -76,13 +76,14 @@ def ml_fitness(population: np.array, geneteic_size: int):
     x = data[:, :-1]
     y = data[:, -1]
     for i, bitstring in enumerate(population):
+        bitstring = map(str, bitstring)
         filtered_x = lin_reg.get_columns(x, bitstring)
         fitness[i] = lin_reg.get_fitness(filtered_x, y)
-    return x, fitness
+        # print('Length', len(filtered_x[0]), 'Fitness', fitness[i])
+    return x, 0.150 - fitness
 
 
 if __name__ == "__main__":
-    '''
     population_size = 50
     genetic_size = 30
     n_parents = population_size    
@@ -166,7 +167,6 @@ if __name__ == "__main__":
     plt.ylim(-1, 1)
     plt.show()
     plt.close()
-    '''
 
     # g) Run the genetic algorithm on the provided dataset.
 
@@ -176,13 +176,13 @@ if __name__ == "__main__":
     for i, line in enumerate(file):
         data[i] = line.split(',')
 
-    population_size = 10
+    population_size = 100
     genetic_size = data.shape[1]-1 # NB the label is not a feature
     n_parents = population_size    
     n_offspring = population_size  
     crossover_rate = 1.0            # p_c 1.0 => two offsprings per parents
-    mutation_rate = 0.85            # p_m
-    n_generations = 10
+    mutation_rate = 0.65            # p_m
+    n_generations = 30
 
     population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
@@ -190,11 +190,13 @@ if __name__ == "__main__":
     fitness_array = np.zeros(n_generations)
 
     for gen in range(n_generations):
+        print('Gen:', gen)
 
         x, fitness = ml_fitness(population, genetic_size)
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
         parents = parent_selection_top(fitness, population, n_parents) # Deterministic
-        fitness_array[gen] = np.average(fitness)
+        fitness_array[gen] = np.average(0.150 - fitness)
+        print('Average RMSE', np.average(0.150 -fitness))
 
         # c) Crossover and mutation
         offspring = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
@@ -204,7 +206,10 @@ if __name__ == "__main__":
 
         population = survivors
 
-    print(f'Final fitness average {np.average(fitness)}')
+    print(f'Final RMSE average {np.average(0.150 - fitness)}')
+    print(f'Final best RMSE {0.150 - np.amax(fitness)}')
+
 
     plt.plot(fitness_array)
     plt.show()
+
