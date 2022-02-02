@@ -1,3 +1,4 @@
+from telnetlib import SGA
 import numpy as np
 import random
 import matplotlib.pyplot as plt
@@ -6,21 +7,28 @@ from LinReg import LinReg
 def generate_population(population_size: int, n_features: int):
     return np.random.randint(2, size=(population_size, n_features))
 
-def sine_fitness_function(population: np.ndarray):
+def normalize_scale(population: np.ndarray):
     n_features = population.shape[1]
     decimal_population = population.dot(1 << np.arange(population.shape[-1])) # Binary to Decimal
     scaling_factor = n_features - 7 # 2^7 = 128 which is the max value
-    normalized_population = decimal_population / (2**scaling_factor)
+    return decimal_population / (2**scaling_factor)
+
+def sine_fitness_function(population: np.ndarray):
+    normalized_population = normalize_scale(population)
     assert np.amin(normalized_population) >= 0 and np.amax(normalized_population) <= 128  # Check interval
     sin_values = np.sin(normalized_population) # [-1, 1]
-    return normalized_population, sin_values
+    return sin_values
 
-def sine_penality_fitness_function(population: np.ndarray, min_val: int, max_val: int):
+def normalize_penalty(population: np.ndarray, min_val: int, max_val: int):
     decimal_population = population.dot(1 << np.arange(population.shape[-1]))
     decimal_population[decimal_population < min_val] = min_val
     decimal_population[decimal_population > max_val] = max_val
+    return decimal_population
+
+def sine_penality_fitness_function(population: np.ndarray, min_val: int, max_val: int):
+    decimal_population = normalize_penalty(population, min_val, max_val)
     sin_values = np.sin(decimal_population) # [-1, 1]
-    return decimal_population, sin_values
+    return sin_values
 
 def roulette_selection(fitness: np.ndarray, population: np.ndarray, n: int):
     fitness = (fitness + 1) / 2 # [-1, 1] -> [0, 1] 
@@ -90,6 +98,11 @@ def survivor_selection_top(parents: np.ndarray, offspring: np.ndarray, parents_f
     top_fitness_indices = np.argpartition(new_fitness, -survivor_size)[-survivor_size:]
     return new_population[top_fitness_indices]
 
+def survivor_selection_stochastic(parents: np.ndarray, offspring: np.ndarray, parents_fitness: np.ndarray, offspring_fitness: np.ndarray, survivor_size: int):
+    new_population = np.concatenate((parents, offspring), axis=0)
+    new_fitness = np.concatenate((parents_fitness, offspring_fitness), axis=0)
+    return roulette_selection(new_fitness, new_population, survivor_size)
+
 def hamming_distance(bitstring1, bitstring2):
     return np.count_nonzero(bitstring1!=bitstring2)
 
@@ -106,47 +119,57 @@ def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, of
         else:
             comp1, comp2 = np.array([o_1, p_2]), np.array([o_2, p_1])
         
-        normalized1, fitness1 = fitness_function(comp1)
-        normalized2, fitness2 = fitness_function(comp2)
+        fitness1 = fitness_function(comp1)
+        fitness2 = fitness_function(comp2)
         winner1 = comp1[np.argpartition(fitness1, -1)[-1:]]
         winner2 = comp2[np.argpartition(fitness2, -1)[-1:]]
         survivors[i], survivors[i+1] = winner1, winner2
     
     return survivors
 
+def calculate_entropy(population: np.ndarray):
+    entropy_sum = 0
+    for i in range(population.shape[1]):
+        bit_array = population[:, i]
+        p_i = np.count_nonzero(bit_array == 1)/population.shape[0]
+        if p_i > 0:
+            entropy_sum += -p_i * np.log2(p_i)
+    return entropy_sum
+
 if __name__ == "__main__":
-    population_size = 50
-    genetic_size = 30
+    population_size = 3000
+    genetic_size = 15
     n_parents = population_size    
-    n_offspring = population_size  
-    crossover_rate = 1.0               # p_c 1.0 => two offsprings per parents
+    n_offspring = n_parents  
+    crossover_rate = 0.8               # p_c 1.0 => two offsprings per parents
     mutation_rate = 1/population_size  # p_m
-    n_generations = 100
+    n_generations = 200
 
     # a) Implement a function to generate an initial population for your genetic algorithm
-    population = generate_population(population_size, genetic_size)
+    SGA_population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
+    SGA_entropy = np.zeros(n_generations)
 
     for gen in range(n_generations):
 
         # b) Implement a parent selection function
-        normalized, fitness = sine_fitness_function(population) # Normalized to range [0, 128]
+        fitness = sine_fitness_function(SGA_population) # Normalized to range [0, 128]
  
-        parents = roulette_selection(fitness, population, n_parents) # Stochastic
+        parents = roulette_selection(fitness, SGA_population, n_parents) # Stochastic
         # parents = parent_selection_top(fitness, population, n_parents) # Deterministic
         fitness_array[gen] = np.average(fitness)
-
+        SGA_entropy[gen] = calculate_entropy(SGA_population)
         # c) Crossover and mutation & d) Implement survivor selection
 
-        # 1. SGA offspring replacement method:
+        # 1. SGA offspring replacement method, population management (GGA):
         offspring, offspring_parents = create_offspring_replacement(parents, crossover_rate, mutation_rate)
-        normalized_parents, parent_fitness,  = sine_fitness_function(parents)
-        normalized_fitness, offspring_fitness = sine_fitness_function(offspring)
+        parent_fitness  = sine_fitness_function(parents)
+        offspring_fitness = sine_fitness_function(offspring)
         survivors = survivor_selection_top(parents, offspring, parent_fitness, offspring_fitness, population_size) # Deterministic
-        population = survivors
+        #survivors = survivor_selection_stochastic(parents, offspring, parent_fitness, offspring_fitness, population_size) # Stochastic
+        SGA_population = survivors
 
     print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')
-    print('Unique normalized x values:', np.unique(np.round(normalized)))
 
     plt.plot(fitness_array)
     plt.show()
@@ -154,19 +177,11 @@ if __name__ == "__main__":
     x = np.arange(0, 128, 0.1) 
     y = np.sin(x)
     plt.plot(x, y, color='blue')
-    plt.plot(normalized, fitness, linestyle="", marker="o", color='red')
+    plt.plot(normalize_scale(SGA_population), fitness, linestyle="", marker="o", color='red')
     plt.xlim(0, 128)
     plt.ylim(-1, 1)
     plt.show()
     plt.close()
-
-    population_size = 200
-    genetic_size = 4
-    n_parents = population_size    
-    n_offspring = population_size  
-    crossover_rate = 1.0                  
-    mutation_rate = 1/population_size           
-    n_generations = 10
 
     # f) Add the constraint that the solution must reside in the interval [5, 10]
     population = generate_population(population_size, genetic_size)
@@ -174,21 +189,22 @@ if __name__ == "__main__":
 
     for gen in range(n_generations):
 
-        normalized, fitness = sine_penality_fitness_function(population, 5, 10) # Penalize to [5, 10]
+        fitness = sine_penality_fitness_function(population, 5, 10) # Penalize to [5, 10]
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
         parents = parent_selection_top(fitness, population, n_parents) # Deterministic
         fitness_array[gen] = np.average(fitness)
 
-        # 1. SGA offspring replacement method:
+        # SGA offspring replacement method:
         offspring, offspring_parents = create_offspring_replacement(parents, crossover_rate, mutation_rate)
-        normalized_parents, parent_fitness = sine_penality_fitness_function(parents, 5, 10)
-        normalized_offspring, offspring_fitness = sine_penality_fitness_function(offspring, 5, 10)
+        parent_fitness = sine_penality_fitness_function(parents, 5, 10)
+        offspring_fitness = sine_penality_fitness_function(offspring, 5, 10)
         survivors = survivor_selection_top(parents, offspring, parent_fitness, offspring_fitness, population_size) # Deterministic
+        # survivors = survivor_selection_stochastic(parents, offspring, parent_fitness, offspring_fitness, population_size) # Stochastic
+
 
         population = survivors
 
     print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')
-    print('Unique normalized x values:', np.unique(np.round(normalized)))
 
     plt.plot(fitness_array)
     plt.show()
@@ -196,39 +212,34 @@ if __name__ == "__main__":
     x = np.arange(5, 10, 0.1) 
     y = np.sin(x)
     plt.plot(x, y, color='blue')
-    plt.plot(normalized, fitness, linestyle="", marker="o", color='red')
+    plt.plot(normalize_penalty(population, 5, 10), fitness, linestyle="", marker="o", color='red')
     plt.xlim(5, 10)
     plt.ylim(-1, 1)
     plt.show()
     plt.close()
-
+    
     # h) Implement a new survivor selection function with crowding
-    population_size = 3000
-    genetic_size = 40
-    n_parents = population_size    
-    n_offspring = population_size  
-    crossover_rate = 1.0           
-    mutation_rate = 1/population_size            
-    n_generations = 50
 
-    population = generate_population(population_size, genetic_size)
+    crowding_population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
+    crowding_entropy = np.zeros(n_generations)
+
 
     for gen in range(n_generations):
 
-        normalized, fitness = sine_fitness_function(population) # Normalized to range [0, 128]
+        fitness = sine_fitness_function(crowding_population) # Normalized to range [0, 128]
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
-        parents = parent_selection_top(fitness, population, n_parents) # Deterministic
+        parents = parent_selection_top(fitness, crowding_population, n_parents) # Deterministic
         fitness_array[gen] = np.average(fitness)
+        crowding_entropy[gen] = calculate_entropy(crowding_population)
 
         # Creates random offspring from parents
         offspring, offspring_parents = create_offspring_random(parents, n_offspring, crossover_rate, mutation_rate)
         survivors = survivor_crowding_replacement(parents, offspring, offspring_parents, population_size, sine_fitness_function) # Deterministic
 
-        population = survivors
+        crowding_population = survivors
 
     print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')
-    print('Unique normalized x values:', np.unique(np.round(normalized)))
 
     plt.plot(fitness_array)
     plt.show()
@@ -236,8 +247,15 @@ if __name__ == "__main__":
     x = np.arange(0, 128, 0.1) 
     y = np.sin(x)
     plt.plot(x, y, color='blue')
-    plt.plot(normalized, fitness, linestyle="", marker="o", color='red')
+    plt.plot(normalize_scale(crowding_population), fitness, linestyle="", marker="o", color='red')
     plt.xlim(0, 128)
     plt.ylim(-1, 1)
     plt.show()
     plt.close()
+
+    plt.plot(SGA_entropy)
+    plt.plot(crowding_entropy)
+    plt.legend(['SGA', 'Crowding'])
+    plt.xlabel('Generation')
+    plt.ylabel('Entropy')
+    plt.show()

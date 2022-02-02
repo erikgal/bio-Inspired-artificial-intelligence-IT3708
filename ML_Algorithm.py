@@ -40,7 +40,7 @@ def create_offspring(parents: np.ndarray, n_offspring:int, p_c: int, p_m: int):
 
     return offspring, offspring_parents
 
-def ml_fitness(population: np.ndarray, geneteic_size: int):
+def ml_fitness(population: np.ndarray):
     fitness = np.zeros(population.shape[0])
     lin_reg = LinReg()
     x = data[:, :-1]
@@ -52,8 +52,8 @@ def ml_fitness(population: np.ndarray, geneteic_size: int):
     return 0.150 - fitness
 
 def survivor_selection_top(parents: np.ndarray, offspring: np.ndarray, survivor_size: int, function):
-    parents_fitness = function(parents, genetic_size)
-    offspring_fitness = function(offspring, genetic_size)
+    parents_fitness = function(parents)
+    offspring_fitness = function(offspring)
     new_population = np.concatenate((parents, offspring), axis=0)
     new_offspring = np.concatenate((parents_fitness, offspring_fitness), axis=0)
 
@@ -63,7 +63,7 @@ def survivor_selection_top(parents: np.ndarray, offspring: np.ndarray, survivor_
 def hamming_distance(bitstring1, bitstring2):
     return np.count_nonzero(bitstring1!=bitstring2)
 
-def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray,  survivor_size: int, fitness_function):
+def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray, fitness_function):
     survivors = np.zeros((n_offspring, parents.shape[1]), dtype=int)
     for i in range(0, offspring.shape[0], 2):
         o_1, o_2 = offspring[i], offspring[i+1]
@@ -76,8 +76,8 @@ def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, of
         else:
             comp1, comp2 = np.array([o_1, p_2]), np.array([o_2, p_1])
         
-        fitness1 = fitness_function(comp1, genetic_size)
-        fitness2 = fitness_function(comp2, genetic_size)
+        fitness1 = fitness_function(comp1)
+        fitness2 = fitness_function(comp2)
         winner1 = comp1[np.argpartition(fitness1, -1)[-1:]]
         winner2 = comp2[np.argpartition(fitness2, -1)[-1:]]
         survivors[i], survivors[i+1] = winner1, winner2
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     n_offspring = population_size  
     crossover_rate = 1.0               
     mutation_rate = 1/population_size       
-    n_generations = 5
+    n_generations = 40
 
     population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     for gen in range(n_generations):
         print('Gen:', gen)
 
-        fitness = ml_fitness(population, genetic_size)
+        fitness = ml_fitness(population)
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
         parents = parent_selection_top(fitness, population, n_parents) # Deterministic
         fitness_array[gen] = np.average(0.150 - fitness)
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     for gen in range(n_generations):
         print('Gen:', gen)
 
-        fitness = ml_fitness(population, genetic_size)
+        fitness = ml_fitness(population)
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
         parents = parent_selection_top(fitness, population, n_parents) # Deterministic
         fitness_array[gen] = np.average(0.150 - fitness)
@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
         offspring, offspring_parents = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
 
-        survivors = survivor_crowding_replacement(parents, offspring, offspring_parents, population_size, ml_fitness) # Deterministic
+        survivors = survivor_crowding_replacement(parents, offspring, offspring_parents, ml_fitness) # Deterministic
 
         population = survivors
 
@@ -159,4 +159,3 @@ if __name__ == "__main__":
     plt.xlabel('Generation')
     plt.ylabel('Average RMSE') 
     plt.show()
-
