@@ -64,7 +64,7 @@ def hamming_distance(bitstring1, bitstring2):
     return np.count_nonzero(bitstring1!=bitstring2)
 
 def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray, fitness_function):
-    survivors = np.zeros((n_offspring, parents.shape[1]), dtype=int)
+    survivors = np.zeros((offspring.shape[0], parents.shape[1]), dtype=int)
     for i in range(0, offspring.shape[0], 2):
         o_1, o_2 = offspring[i], offspring[i+1]
         p_1, p_2 = parents[offspring_parents[i]], parents[offspring_parents[i+1]]
@@ -84,6 +84,15 @@ def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, of
     
     return survivors
 
+def calculate_entropy(population: np.ndarray):
+    entropy_sum = 0
+    for i in range(population.shape[1]):
+        bit_array = population[:, i]
+        p_i = np.count_nonzero(bit_array == 1)/population.shape[0]
+        if p_i > 0:
+            entropy_sum += -p_i * np.log2(p_i)
+    return entropy_sum
+
 if __name__ == "__main__":
     # g) Run the genetic algorithm on the provided dataset.
 
@@ -99,27 +108,27 @@ if __name__ == "__main__":
     n_offspring = population_size  
     crossover_rate = 1.0               
     mutation_rate = 1/population_size       
-    n_generations = 40
+    n_generations = 100
 
-    population = generate_population(population_size, genetic_size)
+    SGA_population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
-
-    fitness_array = np.zeros(n_generations)
+    SGA_entropy = np.zeros(n_generations)
 
     for gen in range(n_generations):
         print('Gen:', gen)
 
-        fitness = ml_fitness(population)
+        fitness = ml_fitness(SGA_population)
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
-        parents = parent_selection_top(fitness, population, n_parents) # Deterministic
+        parents = parent_selection_top(fitness, SGA_population, n_parents) # Deterministic
         fitness_array[gen] = np.average(0.150 - fitness)
+        SGA_entropy[gen] = calculate_entropy(SGA_population)
         print('Average RMSE', np.average(0.150 - fitness))
 
         offspring, offspring_parents = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
 
         survivors = survivor_selection_top(parents, offspring, population_size, ml_fitness) # Deterministic
 
-        population = survivors
+        SGA_population = survivors
 
     print(f'Final RMSE average {np.average(0.150 - fitness)}')
     print(f'Final best RMSE {0.150 - np.amax(fitness)}')
@@ -132,25 +141,25 @@ if __name__ == "__main__":
 
     # h) Implement a new survivor selection function with crowding
 
-    population = generate_population(population_size, genetic_size)
+    crowding_population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
-
-    fitness_array = np.zeros(n_generations)
+    crowding_entropy = np.zeros(n_generations)
 
     for gen in range(n_generations):
         print('Gen:', gen)
 
-        fitness = ml_fitness(population)
+        fitness = ml_fitness(crowding_population)
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
-        parents = parent_selection_top(fitness, population, n_parents) # Deterministic
+        parents = parent_selection_top(fitness, crowding_population, n_parents) # Deterministic
         fitness_array[gen] = np.average(0.150 - fitness)
+        crowding_entropy[gen] = calculate_entropy(crowding_population)
         print('Average RMSE', np.average(0.150 - fitness))
 
         offspring, offspring_parents = create_offspring(parents, n_offspring, crossover_rate, mutation_rate)
 
         survivors = survivor_crowding_replacement(parents, offspring, offspring_parents, ml_fitness) # Deterministic
 
-        population = survivors
+        crowding_population = survivors
 
     print(f'Final RMSE average: {np.average(0.150 - fitness)}')
     print(f'Final best RMSE: {0.150 - np.amax(fitness)}')
@@ -158,4 +167,11 @@ if __name__ == "__main__":
     plt.plot(fitness_array)
     plt.xlabel('Generation')
     plt.ylabel('Average RMSE') 
+    plt.show()
+
+    plt.plot(SGA_entropy)
+    plt.plot(crowding_entropy)
+    plt.legend(['SGA', 'Crowding'])
+    plt.xlabel('Generation')
+    plt.ylabel('Entropy')
     plt.show()

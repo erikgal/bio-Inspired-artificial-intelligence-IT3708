@@ -106,8 +106,8 @@ def survivor_selection_stochastic(parents: np.ndarray, offspring: np.ndarray, pa
 def hamming_distance(bitstring1, bitstring2):
     return np.count_nonzero(bitstring1!=bitstring2)
 
-def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray,  survivor_size: int, fitness_function):
-    survivors = np.zeros((n_offspring, parents.shape[1]), dtype=int)
+def survivor_crowding_deterministic(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray,  survivor_size: int, fitness_function):
+    survivors = np.zeros((offspring.shape[0], parents.shape[1]), dtype=int)
     for i in range(0, offspring.shape[0], 2):
         o_1, o_2 = offspring[i], offspring[i+1]
         p_1, p_2 = parents[offspring_parents[i]], parents[offspring_parents[i+1]]
@@ -123,6 +123,58 @@ def survivor_crowding_replacement(parents: np.ndarray, offspring: np.ndarray, of
         fitness2 = fitness_function(comp2)
         winner1 = comp1[np.argpartition(fitness1, -1)[-1:]]
         winner2 = comp2[np.argpartition(fitness2, -1)[-1:]]
+        survivors[i], survivors[i+1] = winner1, winner2
+    
+    return survivors
+
+def boltzmann_selection(fitness, comp, T):
+    if fitness[0] >= fitness[1]:
+        return comp[0]
+    p_c = 1 / (1 + np.exp((fitness[0] - fitness[1]) / T))
+    if random.random() < p_c:
+        return comp[0]
+    return comp[1]
+        
+def survivor_crowding_boltzmann(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray,  survivor_size: int, fitness_function, T: int):
+    survivors = np.zeros((offspring.shape[0], parents.shape[1]), dtype=int)
+    for i in range(0, offspring.shape[0], 2):
+        o_1, o_2 = offspring[i], offspring[i+1]
+        p_1, p_2 = parents[offspring_parents[i]], parents[offspring_parents[i+1]]
+        o1_p1, o1_p2 = hamming_distance(o_1, p_1),  hamming_distance(o_1, p_2)
+        o2_p2, o2_p1 = hamming_distance(o_2, p_2), hamming_distance(o_2, p_1)
+
+        if o1_p1 + o2_p2 < o1_p2 + o2_p1:
+            comp1, comp2 = np.array([o_1, p_1]), np.array([o_2, p_2])
+        else:
+            comp1, comp2 = np.array([o_1, p_2]), np.array([o_2, p_1])
+        
+        fitness1 = fitness_function(comp1)
+        fitness2 = fitness_function(comp2)
+
+        winner1 = boltzmann_selection(fitness1, comp1, T)
+        winner2 = boltzmann_selection(fitness2, comp2, T)
+        survivors[i], survivors[i+1] = winner1, winner2
+    
+    return survivors
+
+def survivor_crowding_probabilistic(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray,  survivor_size: int, fitness_function):
+    survivors = np.zeros((offspring.shape[0], parents.shape[1]), dtype=int)
+    for i in range(0, offspring.shape[0], 2):
+        o_1, o_2 = offspring[i], offspring[i+1]
+        p_1, p_2 = parents[offspring_parents[i]], parents[offspring_parents[i+1]]
+        o1_p1, o1_p2 = hamming_distance(o_1, p_1),  hamming_distance(o_1, p_2)
+        o2_p2, o2_p1 = hamming_distance(o_2, p_2), hamming_distance(o_2, p_1)
+
+        if o1_p1 + o2_p2 < o1_p2 + o2_p1:
+            comp1, comp2 = np.array([o_1, p_1]), np.array([o_2, p_2])
+        else:
+            comp1, comp2 = np.array([o_1, p_2]), np.array([o_2, p_1])
+        
+        fitness1 = fitness_function(comp1)
+        fitness2 = fitness_function(comp2)
+
+        winner1 = roulette_selection(np.exp(fitness1), comp1, 1)[0]
+        winner2 = roulette_selection(np.exp(fitness2), comp2, 1)[0]
         survivors[i], survivors[i+1] = winner1, winner2
     
     return survivors
@@ -143,7 +195,7 @@ if __name__ == "__main__":
     n_offspring = n_parents  
     crossover_rate = 0.8               # p_c 1.0 => two offsprings per parents
     mutation_rate = 1/population_size  # p_m
-    n_generations = 200
+    n_generations = 150
 
     # a) Implement a function to generate an initial population for your genetic algorithm
     SGA_population = generate_population(population_size, genetic_size)
@@ -235,8 +287,8 @@ if __name__ == "__main__":
 
         # Creates random offspring from parents
         offspring, offspring_parents = create_offspring_random(parents, n_offspring, crossover_rate, mutation_rate)
-        survivors = survivor_crowding_replacement(parents, offspring, offspring_parents, population_size, sine_fitness_function) # Deterministic
-
+        survivors = survivor_crowding_deterministic(parents, offspring, offspring_parents, population_size, sine_fitness_function) # Deterministic
+        # survivors = survivor_crowding_probabilistic(parents, offspring, offspring_parents, population_size, sine_fitness_function) # Stochastic
         crowding_population = survivors
 
     print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')
