@@ -1,8 +1,11 @@
+import math
 from telnetlib import SGA
 import numpy as np
 import random
 import matplotlib.pyplot as plt
 from LinReg import LinReg
+from sklearn.preprocessing import MinMaxScaler
+
 
 def generate_population(population_size: int, n_features: int):
     return np.random.randint(2, size=(population_size, n_features))
@@ -25,13 +28,21 @@ def normalize_penalty(population: np.ndarray, min_val: int, max_val: int):
     decimal_population[decimal_population > max_val] = max_val
     return decimal_population
 
-def sine_penality_fitness_function(population: np.ndarray, min_val: int, max_val: int):
-    decimal_population = normalize_penalty(population, min_val, max_val)
+def sine_penality_fitness_function(population: np.ndarray, min_val: int, max_val: int, penality: int):
+    decimal_population = normalize_scale(population)
+    min_indices = np.where(decimal_population < min_val)
+    max_indices = np.where(decimal_population > max_val)
+
     sin_values = np.sin(decimal_population) # [-1, 1]
+    sin_values[min_indices] -= (5 - decimal_population[min_indices]) * penality
+    sin_values[max_indices] -= (decimal_population[max_indices] - 10) * penality
     return sin_values
 
-def roulette_selection(fitness: np.ndarray, population: np.ndarray, n: int):
-    fitness = (fitness + 1) / 2 # [-1, 1] -> [0, 1] 
+def roulette_selection(fitness: np.ndarray, population: np.ndarray, n: int, scaling = False):
+    if  np.amin(fitness) < 0 and scaling:
+        fitness -= np.amin(fitness) # fix negative fitness for penalty
+    else:
+        fitness = (fitness + 1) / 2 # [-1, 1] -> [0, 1]
     probability = fitness/np.sum(fitness)
     indices = np.array([i for i in range(population.shape[0])])
     survivor_indices = np.random.choice(indices, n, p = probability)
@@ -101,7 +112,7 @@ def survivor_selection_top(parents: np.ndarray, offspring: np.ndarray, parents_f
 def survivor_selection_stochastic(parents: np.ndarray, offspring: np.ndarray, parents_fitness: np.ndarray, offspring_fitness: np.ndarray, survivor_size: int):
     new_population = np.concatenate((parents, offspring), axis=0)
     new_fitness = np.concatenate((parents_fitness, offspring_fitness), axis=0)
-    return roulette_selection(new_fitness, new_population, survivor_size)
+    return roulette_selection(np.exp(new_fitness*10), new_population, survivor_size)
 
 def hamming_distance(bitstring1, bitstring2):
     return np.count_nonzero(bitstring1!=bitstring2)
@@ -127,36 +138,6 @@ def survivor_crowding_deterministic(parents: np.ndarray, offspring: np.ndarray, 
     
     return survivors
 
-def boltzmann_selection(fitness, comp, T):
-    if fitness[0] >= fitness[1]:
-        return comp[0]
-    p_c = 1 / (1 + np.exp((fitness[0] - fitness[1]) / T))
-    if random.random() < p_c:
-        return comp[0]
-    return comp[1]
-        
-def survivor_crowding_boltzmann(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray,  survivor_size: int, fitness_function, T: int):
-    survivors = np.zeros((offspring.shape[0], parents.shape[1]), dtype=int)
-    for i in range(0, offspring.shape[0], 2):
-        o_1, o_2 = offspring[i], offspring[i+1]
-        p_1, p_2 = parents[offspring_parents[i]], parents[offspring_parents[i+1]]
-        o1_p1, o1_p2 = hamming_distance(o_1, p_1),  hamming_distance(o_1, p_2)
-        o2_p2, o2_p1 = hamming_distance(o_2, p_2), hamming_distance(o_2, p_1)
-
-        if o1_p1 + o2_p2 < o1_p2 + o2_p1:
-            comp1, comp2 = np.array([o_1, p_1]), np.array([o_2, p_2])
-        else:
-            comp1, comp2 = np.array([o_1, p_2]), np.array([o_2, p_1])
-        
-        fitness1 = fitness_function(comp1)
-        fitness2 = fitness_function(comp2)
-
-        winner1 = boltzmann_selection(fitness1, comp1, T)
-        winner2 = boltzmann_selection(fitness2, comp2, T)
-        survivors[i], survivors[i+1] = winner1, winner2
-    
-    return survivors
-
 def survivor_crowding_probabilistic(parents: np.ndarray, offspring: np.ndarray, offspring_parents: np.ndarray,  survivor_size: int, fitness_function):
     survivors = np.zeros((offspring.shape[0], parents.shape[1]), dtype=int)
     for i in range(0, offspring.shape[0], 2):
@@ -173,11 +154,46 @@ def survivor_crowding_probabilistic(parents: np.ndarray, offspring: np.ndarray, 
         fitness1 = fitness_function(comp1)
         fitness2 = fitness_function(comp2)
 
-        winner1 = roulette_selection(np.exp(fitness1), comp1, 1)[0]
-        winner2 = roulette_selection(np.exp(fitness2), comp2, 1)[0]
+        winner1 = roulette_selection(np.exp(fitness1*500), comp1, 1)[0]
+        winner2 = roulette_selection(np.exp(fitness2*500), comp2, 1)[0]
         survivors[i], survivors[i+1] = winner1, winner2
     
     return survivors
+
+def sharing(sigma: float, d: np.ndarray, alpha = 10.0):
+    return 1 - (d / sigma)**alpha
+
+def survivior_crowding_fitness_sharing(parents: np.ndarray, offspring: np.ndarray, sigma_sh: int, fitness_function, population_size):
+
+    parents_fitness, offspring_fitness = fitness_function(parents), fitness_function(offspring)
+    parents_sharing_fitness, offspring_sharing_fitness = np.zeros(parents.shape[0]), np.zeros(offspring.shape[0])
+    normalized_parents, normalized_offspring = normalize_scale(parents), normalize_scale(offspring) 
+
+    for i, parent_val in enumerate(normalized_parents):
+        parent_indices = np.where( abs(normalized_parents -  parent_val) < sigma_sh)
+        offspring_indices = np.where( abs(normalized_offspring -  parent_val) < sigma_sh)
+
+        parents_dist = np.abs(normalized_parents[parent_indices] - parent_val)
+        offspring_dist = np.abs(normalized_offspring[offspring_indices] - parent_val)
+
+        nc_parents = np.sum(sharing(sigma_sh, parents_dist))
+        nc_offspring = np.sum(sharing(sigma_sh, offspring_dist))
+
+        parents_sharing_fitness[i] = parents_fitness[i]/(nc_parents + nc_offspring) 
+
+    for i, offspring_val in enumerate(normalized_offspring):
+        parent_indices = np.where( abs(normalized_parents -  offspring_val) < sigma_sh)
+        offspring_indices = np.where( abs(normalized_offspring -  offspring_val) < sigma_sh)
+
+        parents_dist = np.abs(normalized_parents[parent_indices] - offspring_val)
+        offspring_dist = np.abs(normalized_offspring[offspring_indices] - offspring_val)
+
+        nc_parents = np.sum(sharing(sigma_sh, parents_dist))
+        nc_offspring = np.sum(sharing(sigma_sh, offspring_dist))
+
+        offspring_sharing_fitness[i] = offspring_fitness[i]/(nc_parents + nc_offspring) 
+
+    return survivor_selection_top(parents, offspring, parents_sharing_fitness, offspring_sharing_fitness, population_size)
 
 def calculate_entropy(population: np.ndarray):
     entropy_sum = 0
@@ -191,7 +207,7 @@ def calculate_entropy(population: np.ndarray):
 if __name__ == "__main__":
     population_size = 3000
     genetic_size = 15
-    n_parents = population_size    
+    n_parents = population_size
     n_offspring = n_parents  
     crossover_rate = 0.8               # p_c 1.0 => two offsprings per parents
     mutation_rate = 1/population_size  # p_m
@@ -205,20 +221,19 @@ if __name__ == "__main__":
     for gen in range(n_generations):
 
         # b) Implement a parent selection function
-        fitness = sine_fitness_function(SGA_population) # Normalized to range [0, 128]
+        fitness = sine_fitness_function(SGA_population) # Normalized to range [0, 128]        
  
         parents = roulette_selection(fitness, SGA_population, n_parents) # Stochastic
-        # parents = parent_selection_top(fitness, population, n_parents) # Deterministic
+        # parents = parent_selection_top(fitness, SGA_population, n_parents) # Deterministic
         fitness_array[gen] = np.average(fitness)
         SGA_entropy[gen] = calculate_entropy(SGA_population)
         # c) Crossover and mutation & d) Implement survivor selection
-
         # 1. SGA offspring replacement method, population management (GGA):
         offspring, offspring_parents = create_offspring_replacement(parents, crossover_rate, mutation_rate)
         parent_fitness  = sine_fitness_function(parents)
         offspring_fitness = sine_fitness_function(offspring)
         survivors = survivor_selection_top(parents, offspring, parent_fitness, offspring_fitness, population_size) # Deterministic
-        #survivors = survivor_selection_stochastic(parents, offspring, parent_fitness, offspring_fitness, population_size) # Stochastic
+        # survivors = survivor_selection_stochastic(parents, offspring, parent_fitness, offspring_fitness, population_size) # Stochastic
         SGA_population = survivors
 
     print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')
@@ -238,18 +253,19 @@ if __name__ == "__main__":
     # f) Add the constraint that the solution must reside in the interval [5, 10]
     population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
+    penality_scale = 0.5
 
     for gen in range(n_generations):
 
-        fitness = sine_penality_fitness_function(population, 5, 10) # Penalize to [5, 10]
+        fitness = sine_penality_fitness_function(population, 5, 10, penality_scale) # Penalize to [5, 10]
         # parents = roulette_selection(fitness, population, n_parents) # Stochastic
         parents = parent_selection_top(fitness, population, n_parents) # Deterministic
         fitness_array[gen] = np.average(fitness)
 
         # SGA offspring replacement method:
         offspring, offspring_parents = create_offspring_replacement(parents, crossover_rate, mutation_rate)
-        parent_fitness = sine_penality_fitness_function(parents, 5, 10)
-        offspring_fitness = sine_penality_fitness_function(offspring, 5, 10)
+        parent_fitness = sine_penality_fitness_function(parents, 5, 10, penality_scale)
+        offspring_fitness = sine_penality_fitness_function(offspring, 5, 10, penality_scale)
         survivors = survivor_selection_top(parents, offspring, parent_fitness, offspring_fitness, population_size) # Deterministic
         # survivors = survivor_selection_stochastic(parents, offspring, parent_fitness, offspring_fitness, population_size) # Stochastic
 
@@ -261,11 +277,11 @@ if __name__ == "__main__":
     plt.plot(fitness_array)
     plt.show()
 
-    x = np.arange(5, 10, 0.1) 
+    x = np.arange(0, 128, 0.1) 
     y = np.sin(x)
     plt.plot(x, y, color='blue')
-    plt.plot(normalize_penalty(population, 5, 10), fitness, linestyle="", marker="o", color='red')
-    plt.xlim(5, 10)
+    plt.plot(normalize_scale(population), sine_fitness_function(population), linestyle="", marker="o", color='red')
+    plt.xlim(0, 128)
     plt.ylim(-1, 1)
     plt.show()
     plt.close()
@@ -288,7 +304,8 @@ if __name__ == "__main__":
         # Creates random offspring from parents
         offspring, offspring_parents = create_offspring_random(parents, n_offspring, crossover_rate, mutation_rate)
         survivors = survivor_crowding_deterministic(parents, offspring, offspring_parents, population_size, sine_fitness_function) # Deterministic
-        # survivors = survivor_crowding_probabilistic(parents, offspring, offspring_parents, population_size, sine_fitness_function) # Stochastic
+        survivors = survivor_crowding_probabilistic(parents, offspring, offspring_parents, population_size, sine_fitness_function) # Stochastic
+        # survivors = survivior_crowding_fitness_sharing(parents, offspring, np.pi, sine_fitness_function, population_size) # Sharing
         crowding_population = survivors
 
     print(f'Final fitness average {np.round(np.average(fitness)*100, 6)}%')

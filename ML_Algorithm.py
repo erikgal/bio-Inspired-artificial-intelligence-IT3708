@@ -108,7 +108,7 @@ if __name__ == "__main__":
     n_offspring = population_size  
     crossover_rate = 1.0               
     mutation_rate = 1/population_size       
-    n_generations = 100
+    n_generations = 70
 
     SGA_population = generate_population(population_size, genetic_size)
     fitness_array = np.zeros(n_generations)
